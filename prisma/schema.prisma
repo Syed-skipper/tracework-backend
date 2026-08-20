@@ -1,0 +1,680 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  EMPLOYEE
+  MANAGER
+  HR_ADMIN
+  ORG_ADMIN
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum BlockerStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+}
+
+enum IdeaStatus {
+  NEW
+  UNDER_REVIEW
+  PLANNED
+  IN_PROGRESS
+  IMPLEMENTED
+  REJECTED
+}
+
+enum OrganizationKind {
+  PERSONAL
+  ENTERPRISE
+}
+
+model Organization {
+  id        String           @id @default(uuid())
+  name      String
+  plan      String           @default("Free")
+  kind      OrganizationKind @default(ENTERPRISE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  users             User[]
+  departments       Department[]
+  teams             Team[]
+  projects          Project[]
+  leaveTypes        LeaveType[]
+  integrations      Integration[]
+  workUpdatePolicy  OrganizationWorkUpdatePolicy?
+  updateRequests    UpdateRequest[]
+  emailLogs         EmailLog[]
+  reminderDispatches ReminderDispatch[]
+  generatedReports  GeneratedReport[]
+  savedReviewPeriods SavedReviewPeriod[]
+
+  @@index([name])
+  @@index([kind])
+}
+
+model Department {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  managerId      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  manager      User?        @relation("DepartmentManager", fields: [managerId], references: [id])
+  users        User[]       @relation("UserDepartment")
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model Team {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      TeamMember[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  teamId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+model User {
+  id             String   @id @default(uuid())
+  organizationId String
+  email          String
+  passwordHash   String
+  name           String
+  role           Role     @default(EMPLOYEE)
+  jobTitle       String?
+  departmentId   String?
+  managerId      String?
+  joinedAt       DateTime @default(now())
+  avatarInitials String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department           Department?           @relation("UserDepartment", fields: [departmentId], references: [id])
+  manager              User?                 @relation("UserManager", fields: [managerId], references: [id])
+  reports              User[]                @relation("UserManager")
+  managesDepts         Department[]          @relation("DepartmentManager")
+  teams                TeamMember[]
+  skills               UserSkill[]
+  assignedTasks        Task[]                @relation("TaskAssignee")
+  dailyPlans           DailyPlan[]
+  journals             DailyJournal[]
+  learning             LearningEntry[]
+  goals                Goal[]
+  blockersRaised       Blocker[]             @relation("BlockerRaisedBy")
+  blockersOwned        Blocker[]             @relation("BlockerOwner")
+  leaveRequests        LeaveRequest[]
+  notifications        Notification[]
+  recognitionsGiven    Recognition[]         @relation("RecognitionFrom")
+  recognitionsReceived Recognition[]         @relation("RecognitionTo")
+  ideas                Idea[]
+  comments             Comment[]
+  events               CalendarEvent[]
+  achievements         Achievement[]
+  knowledge            KnowledgeEntry[]
+  resetTokens              PasswordResetToken[]
+  ideaVotes                IdeaVote[]
+  aiConfig                 UserAiConfig?
+  notificationPreference   NotificationPreference?
+  updateRequestsSent       UpdateRequest[] @relation("UpdateRequestFrom")
+  updateRequestsReceived   UpdateRequest[] @relation("UpdateRequestTo")
+  reminderDispatches       ReminderDispatch[]
+  generatedReports         GeneratedReport[] @relation("ReportCreator")
+  savedReviewPeriods       SavedReviewPeriod[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId, role])
+  @@index([managerId])
+}
+
+enum AiProvider {
+  OPENROUTER
+}
+
+enum AiConfigScope {
+  PERSONAL
+  ORGANIZATION
+}
+
+/** Personal (or future org) BYOK AI configuration. API key stored encrypted at rest. */
+model UserAiConfig {
+  id               String        @id @default(uuid())
+  userId           String        @unique
+  scope            AiConfigScope @default(PERSONAL)
+  provider         AiProvider    @default(OPENROUTER)
+  model            String        @default("openrouter/free")
+  apiKeyCiphertext String
+  apiKeyIv         String
+  apiKeyTag        String
+  apiKeyLast4      String
+  enabled          Boolean       @default(true)
+  lastTestedAt     DateTime?
+  lastTestStatus   String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([scope])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Skill {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  users UserSkill[]
+}
+
+model UserSkill {
+  id        String   @id @default(uuid())
+  userId    String
+  skillId   String
+  level     Int      @default(0)
+  trend     String   @default("flat")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skillId])
+}
+
+model Project {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tasks        Task[]
+
+  @@unique([organizationId, name])
+}
+
+model Task {
+  id           String     @id @default(uuid())
+  projectId    String
+  assigneeId   String
+  title        String
+  description  String?
+  priority     Priority   @default(MEDIUM)
+  status       TaskStatus @default(TODO)
+  dueDate      DateTime?
+  estimateMins Int        @default(30)
+  tags         String[]   @default([])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  project  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee User    @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
+
+  @@index([assigneeId, dueDate])
+  @@index([projectId, status])
+}
+
+model DailyPlan {
+  id        String   @id @default(uuid())
+  userId    String
+  date      DateTime
+  focus     String?
+  mood      Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+model DailyJournal {
+  id          String   @id @default(uuid())
+  userId      String
+  date        DateTime
+  completion  Int      @default(0)
+  mood        Int?
+  focus       String?
+  completed   String[] @default([])
+  learned     String[] @default([])
+  blocked     String[] @default([])
+  tomorrow    String[] @default([])
+  managerNote String?
+  isPrivate   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+model LearningEntry {
+  id          String   @id @default(uuid())
+  userId      String
+  topic       String
+  description String
+  date        DateTime
+  minutes     Int
+  confidence  Int      @default(3)
+  project     String?
+  tags        String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+model Goal {
+  id         String    @id @default(uuid())
+  userId     String
+  title      String
+  type       String
+  progress   Int       @default(0)
+  targetDate DateTime?
+  evidence   String[]  @default([])
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestones GoalMilestone[]
+
+  @@index([userId])
+}
+
+model GoalMilestone {
+  id        String   @id @default(uuid())
+  goalId    String
+  title     String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+}
+
+model Blocker {
+  id          String        @id @default(uuid())
+  title       String
+  description String
+  severity    String
+  affected    Int           @default(1)
+  status      BlockerStatus @default(OPEN)
+  raisedById  String
+  ownerId     String?
+  raisedAt    DateTime      @default(now())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  raisedBy User      @relation("BlockerRaisedBy", fields: [raisedById], references: [id], onDelete: Cascade)
+  owner    User?     @relation("BlockerOwner", fields: [ownerId], references: [id])
+  comments Comment[]
+
+  @@index([status])
+  @@index([raisedById])
+}
+
+model LeaveType {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  daysPerYear    Int
+  accrual        String   @default("Annual grant")
+  carry          String   @default("None")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requests     LeaveRequest[]
+
+  @@unique([organizationId, name])
+}
+
+model LeaveRequest {
+  id          String             @id @default(uuid())
+  userId      String
+  leaveTypeId String
+  from        DateTime
+  to          DateTime
+  days        Int
+  reason      String
+  status      LeaveRequestStatus @default(PENDING)
+  requestedAt DateTime           @default(now())
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@index([userId, status])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  kind      String
+  title     String
+  body      String
+  actionUrl String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+}
+
+/** Employee-controlled channels. Organization policy may still send required reminders. */
+model NotificationPreference {
+  id                    String   @id @default(uuid())
+  userId                String   @unique
+  dailyUpdateReminders  Boolean  @default(true)
+  taskAssignments       Boolean  @default(true)
+  taskDueReminders      Boolean  @default(true)
+  managerRequests       Boolean  @default(true)
+  weeklySummary         Boolean  @default(true)
+  channelInApp          Boolean  @default(true)
+  channelEmail          Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model OrganizationWorkUpdatePolicy {
+  id                 String   @id @default(uuid())
+  organizationId     String   @unique
+  enabled            Boolean  @default(true)
+  requireDaily       Boolean  @default(false)
+  reminderTime       String   @default("17:00")
+  workingDays        Int[]    @default([1, 2, 3, 4, 5])
+  notifyInApp        Boolean  @default(true)
+  notifyEmail        Boolean  @default(true)
+  reminderFrequency  String   @default("once_daily")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model UpdateRequest {
+  id             String   @id @default(uuid())
+  organizationId String
+  fromId         String
+  toId           String
+  message        String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  from         User         @relation("UpdateRequestFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to           User         @relation("UpdateRequestTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([toId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+model ReminderDispatch {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  kind           String
+  date           DateTime
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, date])
+  @@index([organizationId, date])
+}
+
+model EmailLog {
+  id             String    @id @default(uuid())
+  organizationId String?
+  toEmail        String
+  toUserId       String?
+  subject        String
+  body           String
+  status         String    @default("queued")
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([toUserId, createdAt])
+}
+
+/** Saved generated report. Regenerating creates a new version instead of overwriting. */
+model GeneratedReport {
+  id             String   @id @default(uuid())
+  organizationId String
+  createdById    String
+  reportType     String
+  subjectType    String
+  subjectId      String?
+  subjectName    String
+  startDate      DateTime
+  endDate        DateTime
+  title          String
+  format         String
+  content        String
+  subjectLine    String?
+  status         String   @default("active")
+  version        Int      @default(1)
+  rootId         String?
+  source         String   @default("template")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User             @relation("ReportCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  root         GeneratedReport? @relation("ReportVersions", fields: [rootId], references: [id])
+  versions     GeneratedReport[] @relation("ReportVersions")
+
+  @@index([organizationId, createdById, createdAt])
+  @@index([createdById, reportType, status])
+}
+
+/** Named appraisal / review windows (FY, mid-year, probation). */
+model SavedReviewPeriod {
+  id             String   @id @default(uuid())
+  organizationId String
+  createdById    String
+  name           String
+  startDate      DateTime
+  endDate        DateTime
+  archived       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, archived])
+}
+
+model Recognition {
+  id        String   @id @default(uuid())
+  fromId    String
+  toId      String
+  badge     String
+  message   String
+  createdAt DateTime @default(now())
+
+  from User @relation("RecognitionFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to   User @relation("RecognitionTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([toId])
+}
+
+model Idea {
+  id          String     @id @default(uuid())
+  authorId    String
+  title       String
+  description String
+  category    String
+  status      IdeaStatus @default(NEW)
+  votes       Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  author   User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments Comment[]
+  voteRows IdeaVote[]
+
+  @@index([status])
+}
+
+model IdeaVote {
+  id        String   @id @default(uuid())
+  ideaId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, userId])
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  authorId  String
+  body      String
+  blockerId String?
+  ideaId    String?
+  createdAt DateTime @default(now())
+
+  author  User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  blocker Blocker? @relation(fields: [blockerId], references: [id], onDelete: Cascade)
+  idea    Idea?    @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@index([blockerId])
+  @@index([ideaId])
+}
+
+model Integration {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String
+  category       String
+  connected      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+}
+
+model CalendarEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  date      DateTime
+  time      String?
+  kind      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+model Achievement {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  detail    String
+  at        String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model KnowledgeEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  topic     String
+  summary   String
+  tags      String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
