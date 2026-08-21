@@ -19,7 +19,7 @@ export const env = {
   aiEncryptionKey: process.env.AI_ENCRYPTION_KEY ?? process.env.JWT_SECRET ?? "dev-secret-change-me",
   frontendOrigins: frontendOrigin
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => s.trim().replace(/\/$/, ""))
     .filter(Boolean),
   openRouterBaseUrl: process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1",
   appUrl: process.env.APP_URL ?? "http://localhost:8080",
