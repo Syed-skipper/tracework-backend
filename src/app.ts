@@ -11,7 +11,7 @@ export function createApp() {
   app.use(
     cors({
       origin: (origin, callback) => {
-        if (!origin || env.isDev) {
+        if (!origin || env.isDev || env.frontendOrigins.includes("*")) {
           callback(null, true);
           return;
         }
